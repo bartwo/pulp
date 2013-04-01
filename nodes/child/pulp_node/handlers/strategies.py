@@ -15,7 +15,7 @@ from logging import getLogger
 
 from pulp_node import constants
 from pulp_node.handlers.model import *
-from pulp_node.handlers.validation import ChildValidator
+from pulp_node.handlers.validation import Validator
 from pulp_node.error import NodeError, CaughtException
 from pulp_node.handlers.reports import StrategyReport, HandlerProgress, RepositoryReport
 
@@ -37,10 +37,10 @@ class HandlerStrategy(object):
     :ivar cancelled: The flag indicating that the current operation
         has been cancelled.
     :type cancelled: bool
-    :var progress: A progress report.
+    :ivar progress: A progress report.
     :type progress: HandlerProgress
-    :var report: The summary report.
-    :type report: HandlerReport
+    :ivar report: The summary report.
+    :type report: StrategyReport
     """
 
     def __init__(self, progress, report):
@@ -57,20 +57,25 @@ class HandlerStrategy(object):
     def synchronize(self, bindings, options):
         """
         Synchronize child repositories based on bindings.
+        Subclasses should not override this method.
         :param bindings: A list of consumer binding payloads.
         :type bindings: list
         :param options: synchronization options.
         :type options: dict
-        :return: The synchronization report.
         """
         self.report.setup(bindings)
         self.progress.started(bindings)
         try:
-            validator = ChildValidator(self.report)
+            # validation
+            validator = Validator(self.report)
             validator.validate(bindings)
             if self.report.failed():
                 return
-            self._synchronize(bindings, options)
+
+            # synchronization implemented by subclasses
+            self._synchronize(bindings)
+
+            # purge orphans
             if options.get(constants.PURGE_ORPHANS_KEYWORD):
                 ChildRepository.purge_orphans()
         except NodeError, ne:
@@ -82,15 +87,11 @@ class HandlerStrategy(object):
         finally:
             self.progress.finished()
 
-    def _synchronize(self, bindings, options):
+    def _synchronize(self, bindings):
         """
-        Synchronize child repositories based on bindings.
-        Must be overridden by subclasses.
+        Specific strategies defined by subclasses.
         :param bindings: A list of consumer binding payloads.
         :type bindings: list
-        :param options: synchronization options.
-        :type options: dict
-        :return: The synchronization report.
         """
         raise NotImplementedError()
 
@@ -125,6 +126,7 @@ class HandlerStrategy(object):
                     child = ChildRepository(repo_id, parent.details)
                     self.report[repo_id].action = RepositoryReport.ADDED
                     child.add()
+                self._synchronize_repository(repo_id)
             except NodeError, ne:
                 self.report.errors.append(ne)
             except Exception, e:
@@ -132,37 +134,25 @@ class HandlerStrategy(object):
                 error = CaughtException(e, repo_id)
                 self.report.errors.append(error)
 
-    def _synchronize_repositories(self, repo_ids, options):
+    def _synchronize_repository(self, repo_id):
         """
-        Run synchronization on repositories.
-        :param repo_ids: A list of repo IDs.
-        :type repo_ids: list
-        :param options: Unit update options.
-        :type options: dict
+        Run synchronization on a repository by ID.
+        :param repo_id: A repository ID.
+        :type repo_id: str
         """
-        for repo_id in repo_ids:
-            if self.cancelled:
-                break
-            repo = ChildRepository(repo_id)
-            try:
-                progress = self.progress.find_report(repo_id)
-                report = repo.run_synchronization(progress)
-                progress.finished()
-                details = report['details']
-                for _dict in details['errors']:
-                    e = NodeError(None)
-                    e.load(_dict)
-                    self.report.errors.append(e)
-                _report = self.report[repo_id]
-                _report.units.added = report['added_count']
-                _report.units.updated = report['updated_count']
-                _report.units.removed = report['removed_count']
-            except NodeError, ne:
-                self.report.errors.append(ne)
-            except Exception, e:
-                log.exception(repo_id)
-                error = CaughtException(e, repo_id)
-                self.report.errors.append(error)
+        repo = ChildRepository(repo_id)
+        progress = self.progress.find_report(repo_id)
+        importer_report = repo.run_synchronization(progress)
+        progress.finished()
+        details = importer_report['details']
+        for _dict in details['errors']:
+            e = NodeError(None)
+            e.load(_dict)
+            self.report.errors.append(e)
+        _report = self.report[repo_id]
+        _report.units.added = importer_report['added_count']
+        _report.units.updated = importer_report['updated_count']
+        _report.units.removed = importer_report['removed_count']
 
     def _delete_repositories(self, bindings):
         """
@@ -170,14 +160,14 @@ class HandlerStrategy(object):
         :param bindings: List of bind payloads.
         :type bindings: list
         """
-        parent = [b['repo_id'] for b in bindings]
-        child = [r.repo_id for r in ChildRepository.fetch_all()]
-        for repo_id in child:
+        repositories_on_parent = [b['repo_id'] for b in bindings]
+        repositories_on_child = [r.repo_id for r in ChildRepository.fetch_all()]
+        for repo_id in repositories_on_child:
             if self.cancelled:
                 break
             try:
-                if repo_id not in parent:
-                    self.report[repo_id].action = RepositoryReport.DELETED
+                if repo_id not in repositories_on_parent:
+                    self.report[repo_id] = RepositoryReport(repo_id, RepositoryReport.DELETED)
                     repo = ChildRepository(repo_id)
                     repo.delete()
             except NodeError, ne:
@@ -187,24 +177,13 @@ class HandlerStrategy(object):
                 error = CaughtException(e, repo_id)
                 self.report.errors.append(error)
 
-    def _touched_repositories(self):
-        """
-        Get a list of repositories that have been added or updated.
-        :return: A list of repository IDs.
-        """
-        dirty = []
-        for report in self.report.repository.values():
-            if report.action in (RepositoryReport.ADDED, RepositoryReport.MERGED):
-                dirty.append(report.repo_id)
-        return dirty
-
 
 # --- strategies ------------------------------------------------------------------------
 
 
 class Mirror(HandlerStrategy):
 
-    def _synchronize(self, bindings, options):
+    def _synchronize(self, bindings):
         """
         Synchronize repositories.
           - Add/Merge bound repositories as needed.
@@ -213,28 +192,22 @@ class Mirror(HandlerStrategy):
           - Purge orphaned content units.
         :param bindings: A list of bind payloads.
         :type bindings: list
-        :param options: Unit update options.
-        :type options: dict
         """
         self._add_repositories(bindings)
         self._delete_repositories(bindings)
-        self._synchronize_repositories(self._touched_repositories(), options)
 
 
 class Additive(HandlerStrategy):
 
-    def _synchronize(self, bindings, options):
+    def _synchronize(self, bindings):
         """
         Synchronize repositories.
           - Add/Merge bound repositories as needed.
           - Synchronize all bound repositories.
         :param bindings: A list of bind payloads.
         :type bindings: list
-        :param options: Unit update options.
-        :type options: dict
         """
         self._add_repositories(bindings)
-        self._synchronize_repositories(self._touched_repositories(), options)
 
 
 # --- factory ---------------------------------------------------------------------------

@@ -45,8 +45,6 @@ class ImporterStrategy(object):
     """
     This object provides the transport independent content unit
     synchronization strategies used by nodes importer plugins.
-    :ivar repo_id: The repository ID.
-    :type repo_id: str
     :ivar cancelled: The flag indicating that the current operation
         has been cancelled.
     :type cancelled: bool

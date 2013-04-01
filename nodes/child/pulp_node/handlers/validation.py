@@ -29,20 +29,42 @@ DETAILS = 'details'
 # --- validation -------------------------------------------------------------
 
 
-class ChildValidator(object):
+class Validator(object):
+    """
+    Validate that a child server is in the proper state to be synchronized.
+    """
 
     def __init__(self, report):
+        """
+        :param report: A strategy reported used for error reporting.
+        :type report: pulp_node.handlers.reports.StrategyReport
+        :return:
+        """
         self.report = report
 
     def validate(self, bindings):
+        """
+        Validate that the child node is suitable for synchronization.
+        :param bindings: A list of binding payloads.
+        :type bindings: list
+        :return:
+        """
         self.report.errors.extend(self._validate_db_versions())
         self.report.errors.extend(self._validate_plugins(bindings))
 
     def _validate_db_versions(self):
+        """
+        Validate that the database versions are compatible.
+        """
         # Future
         return []
 
     def _validate_plugins(self, bindings):
+        """
+        Validate that all plugins referenced in the bindings are installed.
+        :param bindings: A list of binding payloads.
+        :type bindings: list
+        """
         errors = []
         child = ChildServer()
         for binding in bindings:

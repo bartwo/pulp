@@ -116,6 +116,9 @@ class StrategyReport(object):
     def __getitem__(self, repo_id):
         return self.repository[repo_id]
 
+    def __setitem__(self, repo_id, report):
+        self.repository[repo_id] = report
+
 
 class HandlerProgress(object):
     """
