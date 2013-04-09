@@ -31,7 +31,7 @@ def key_and_repr(units):
 # --- reports ---------------------------------------------------------------------------
 
 
-class ImporterReport(object):
+class SummaryReport(object):
     """
     A report that provides both summary and details regarding the importing
     of content units associated with a repository.

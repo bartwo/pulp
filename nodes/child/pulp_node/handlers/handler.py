@@ -18,7 +18,7 @@ from pulp.agent.lib.report import ContentReport
 
 from pulp_node import constants
 from pulp_node.handlers.strategies import find_strategy
-from pulp_node.handlers.reports import HandlerProgress, StrategyReport
+from pulp_node.handlers.reports import HandlerProgress, SummaryReport
 from pulp_node.handlers.model import ParentBinding
 
 
@@ -40,20 +40,20 @@ class NodeHandler(ContentHandler):
         :return: An update report.
         :rtype: ContentReport
         """
-        report = StrategyReport()
+        summary = SummaryReport()
         progress = HandlerProgress(conduit)
         bindings = ParentBinding.fetch_all()
 
         strategy_name = options.setdefault(constants.STRATEGY_KEYWORD, constants.MIRROR_STRATEGY)
         strategy_class = find_strategy(strategy_name)
-        strategy = strategy_class(progress, report)
+        strategy = strategy_class(progress, summary)
         strategy.synchronize(bindings, options)
 
         handler_report = ContentReport()
-        if report.succeeded():
-            handler_report.set_succeeded(report.dict())
+        if summary.succeeded():
+            handler_report.set_succeeded(summary.dict())
         else:
-            handler_report.set_failed(report.dict())
+            handler_report.set_failed(summary.dict())
         return handler_report
 
 

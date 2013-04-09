@@ -54,13 +54,13 @@ class ImporterStrategy(object):
     :type config: pulp.server.plugins.config.PluginCallConfiguration
     :ivar downloader: A fully configured file downloader.
     :type downloader: pulp.common.download.backends.base.DownloadBackend
-    :ivar progress: A progress reporting object.
-    :type progress: RepositoryProgress
-    :ivar report: A summary report.
-    :type report: pulp_node.importers.reports.ImporterReport
+    :ivar progress_report: A progress reporting object.
+    :type progress_report: RepositoryProgress
+    :ivar summary_report: A summary report.
+    :type summary_report: pulp_node.importers.reports.SummaryReport
     """
 
-    def __init__(self, conduit, config, downloader, progress, report):
+    def __init__(self, conduit, config, downloader, progress_report, summary_report):
         """
         :param conduit: Provides access to relevant Pulp functionality.
         :type conduit: pulp.server.conduits.repo_sync.RepoSyncConduit
@@ -70,15 +70,15 @@ class ImporterStrategy(object):
         :type downloader: pulp.common.download.backends.base.DownloadBackend
         :param progress: A progress reporting object.
         :type progress: pulp_node.importers.reports.RepositoryProgress
-        :param report: A summary report.
-        :type report: pulp_node.importers.reports.ImporterReport
+        :param summary_report: A summary report.
+        :type summary_report: pulp_node.importers.reports.SummaryReport
         """
         self.cancelled = False
         self.conduit = conduit
         self.config = config
         self.downloader = downloader
-        self.progress = progress
-        self.report = report
+        self.progress_report = progress_report
+        self.summary_report = summary_report
 
     def synchronize(self, repo_id):
         """
@@ -91,10 +91,10 @@ class ImporterStrategy(object):
         try:
             self._synchronize(repo_id)
         except NodeError, ne:
-            self.report.errors.append(ne)
+            self.summary_report.errors.append(ne)
         except Exception, e:
             log.exception(repo_id)
-            self.report.errors.append(CaughtException(e, repo_id))
+            self.summary_report.errors.append(CaughtException(e, repo_id))
 
     def _synchronize(self, repo_id):
         """
@@ -123,10 +123,10 @@ class ImporterStrategy(object):
         """
         try:
             self.conduit.save_unit(unit)
-            self.progress.unit_added(details=unit.storage_path)
+            self.progress_report.unit_added(details=unit.storage_path)
         except Exception:
             log.exception(unit.id)
-            self.report.errors.append(AddUnitError())
+            self.summary_report.errors.append(AddUnitError())
 
     # --- protected ---------------------------------------------------------------------
 
@@ -203,7 +203,7 @@ class ImporterStrategy(object):
         :type unit_inventory: UnitInventory
         """
         units = self._missing_units(unit_inventory)
-        self.progress.begin_adding_units(len(units))
+        self.progress_report.begin_adding_units(len(units))
         batch = Batch()
         for unit, child_unit in units:
             if self.cancelled:
@@ -220,7 +220,7 @@ class ImporterStrategy(object):
         listener = DownloadListener(self, batch)
         self.downloader.event_listener = listener
         self.downloader.download(batch.request_list)
-        self.report.errors.extend(listener.errors)
+        self.summary_report.errors.extend(listener.errors)
 
     def _delete_units(self, unit_inventory):
         """
@@ -237,7 +237,7 @@ class ImporterStrategy(object):
                 self.conduit.remove_unit(unit)
             except Exception:
                 log.exception(unit.id)
-                self.report.errors.append(DeleteUnitError())
+                self.summary_report.errors.append(DeleteUnitError())
 
     def _child_units(self):
         """
@@ -260,7 +260,7 @@ class ImporterStrategy(object):
         :return: A dictionary of units keyed by UnitKey.
         :rtype: dict
         """
-        self.progress.begin_manifest_download()
+        self.progress_report.begin_manifest_download()
         url = self.config.get(constants.MANIFEST_URL_KEYWORD)
         manifest = Manifest()
         units = manifest.read(url, self.downloader)

@@ -13,23 +13,33 @@ from pulp_node.progress import RepositoryProgress
 from pulp_node.error import ErrorList
 
 
+# --- summary reporting  -----------------------------------------------------
+
+
 class RepositoryReport(object):
     """
     Repository merge report.
-    :ivar added: List of added repositories by repo_id.
-    :type added: list
-    :ivar merged: List of merged repositories by repo_id.
-    :type merged: list
-    :ivar removed: List of removed repositories by repo_id.
-    :type removed: list
+    :ivar repo_id: The repository ID.
+    :type repo_id: str
+    :ivar action: The action taken on the repository.
+    :param action: str
+    :ivar units: A content unit report.
+    :param units: UnitReport
     """
 
+    # actions
     PENDING = 'pending'
     ADDED = 'added'
     MERGED = 'merged'
     DELETED = 'deleted'
 
     def __init__(self, repo_id, action=PENDING):
+        """
+        :param repo_id: The repository ID.
+        :type repo_id: str
+        :param action: The action taken on the repository.
+        :param action: str
+        """
         self.repo_id = repo_id
         self.action = action
         self.units = UnitReport()
@@ -68,14 +78,13 @@ class UnitReport(object):
         return self.__dict__
 
 
-class StrategyReport(object):
+class SummaryReport(object):
     """
-    Strategy synchronization() report.
-    Aggregates the MergeReport and importer reports.
+    Node synchronization summary report.
     :ivar errors: A list of error messages.
     :type errors: list
-    :ivar repository: A repository merge report.
-    :type repository: MergeReport
+    :ivar repository: A dictionary of RepositoryReport keyed by repo_id.
+    :type repository: dict
     """
 
     def __init__(self):
@@ -83,6 +92,12 @@ class StrategyReport(object):
         self.repository = {}
 
     def setup(self, bindings):
+        """
+        Setup (prime) the report using the specified bindings.
+        A RepositoryReport is created for each repository referenced in the bindings.
+        :param bindings:
+        :return:
+        """
         for bind in bindings:
             repo_id = bind['repo_id']
             self.repository[repo_id] = RepositoryReport(repo_id)
@@ -120,11 +135,12 @@ class StrategyReport(object):
         self.repository[repo_id] = report
 
 
+# --- progress reporting  ----------------------------------------------------
+
+
 class HandlerProgress(object):
     """
     The nodes handler progress report.
-    Extends progress report base class to provide integration
-    with the handler conduit.
     """
 
     PENDING = 'pending'
@@ -178,7 +194,7 @@ class HandlerProgress(object):
 
     def updated(self, report):
         """
-        Notification that a repository progress report has been updated.
+        Update the progress associated with a specific repository by repo_id.
         :param report: The update repository progress report.
         :type report: RepositoryProgress
         """

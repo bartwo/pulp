@@ -21,7 +21,7 @@ from pulp.common.download.config import DownloaderConfig
 from pulp_node import constants
 from pulp_node.error import CaughtException
 from pulp_node.progress import RepositoryProgress
-from pulp_node.importers.reports import ImporterReport, ProgressListener
+from pulp_node.importers.reports import SummaryReport, ProgressListener
 from pulp_node.importers.strategies import find_strategy
 
 
@@ -116,7 +116,7 @@ class NodesHttpImporter(Importer):
         :return: A report describing the result.
         :rtype: pulp.server.plugins.model.SyncReport
         """
-        report = ImporterReport()
+        summary = SummaryReport()
 
         try:
             downloader = self._downloader(config)
@@ -124,14 +124,14 @@ class NodesHttpImporter(Importer):
             strategy_class = find_strategy(strategy_name)
             listener = ProgressListener(conduit)
             progress = RepositoryProgress(repo.id, listener)
-            strategy = strategy_class(conduit, config, downloader, progress, report)
+            strategy = strategy_class(conduit, config, downloader, progress, summary)
             progress.begin_importing()
             strategy.synchronize(repo.id)
         except Exception, e:
-            report.errors.append(CaughtException(e, repo.id))
+            summary.errors.append(CaughtException(e, repo.id))
 
-        report.update(repo_id=repo.id)
-        report = conduit.build_success_report({}, report.dict())
+        summary.update(repo_id=repo.id)
+        report = conduit.build_success_report({}, summary.dict())
         return report
 
     def _downloader(self, config):

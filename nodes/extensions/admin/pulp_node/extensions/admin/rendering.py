@@ -10,7 +10,6 @@
 # http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt.
 
 from gettext import gettext as _
-from pulp.client.commands.repo.sync_publish import StatusRenderer
 from pulp_node.progress import RepositoryProgress
 
 
@@ -23,6 +22,7 @@ ADD_UNIT_FIELD = _('(%(n)d/%(t)d) Add unit: %(d)s')
 
 PROGRESS_STATES = {
     RepositoryProgress.PENDING: _('Pending'),
+    RepositoryProgress.MERGING: _('Merging'),
     RepositoryProgress.DOWNLOADING_MANIFEST: _('Downloading Manifest'),
     RepositoryProgress.ADDING_UNITS: _('Adding Units'),
     RepositoryProgress.IMPORTING: _('Importing'),
